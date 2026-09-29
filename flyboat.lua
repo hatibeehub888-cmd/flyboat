@@ -1,20 +1,15 @@
 -- ============================================================
--- フライボート v4（Blox Fruits 用）
--- ・カメラ連動（視点方向に確実に進む）
--- ・確実な上下操作
--- ・Noclip 統合
--- ・スマホ完全対応
+-- FlyBoat v5（FlyGuiV3 ベース + 船対応 + 視点同期完璧版）
 -- ============================================================
-local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
-local SPEED = 300
-local ON = true
-local NOCLIP_ON = true
-
+local SPEED = 1
+local flyEnabled = false
+local noclipEnabled = true
 local guiUp = false
 local guiDown = false
 
@@ -24,217 +19,303 @@ local function getMyBoat()
     local hum = char:FindFirstChild("Humanoid")
     if not hum then return nil end
     if not workspace:FindFirstChild("Boats") then return nil end
+
     for _, boat in pairs(workspace.Boats:GetChildren()) do
         local seat = boat:FindFirstChild("VehicleSeat")
         if seat and seat.Occupant == hum then
-            return boat, seat
+            return boat
         end
     end
     return nil
 end
 
+local function applyNoclipToPart(obj)
+    if obj and obj:IsA("BasePart") then
+        obj.CanCollide = false
+    end
+end
+
 local function applyNoclip(boat, char)
-    if not NOCLIP_ON then return end
+    if not noclipEnabled then return end
+
     if boat then
         for _, p in pairs(boat:GetDescendants()) do
-            if p:IsA("BasePart") then
-                p.CanCollide = false
-            end
+            applyNoclipToPart(p)
         end
     end
+
     if char then
         for _, p in pairs(char:GetDescendants()) do
-            if p:IsA("BasePart") then
-                p.CanCollide = false
-            end
+            applyNoclipToPart(p)
         end
     end
 end
 
+local function clampSpeed(value)
+    return math.max(1, math.min(20, value))
+end
+
+-- ============================================
+-- Fly movement loop
+-- ============================================
 RunService.Heartbeat:Connect(function(dt)
-    if not ON then return end
     local boat = getMyBoat()
-    if not boat then return end
+    if not flyEnabled or not boat then return end
+
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChild("Humanoid")
     if not hum then return end
-    
+
     applyNoclip(boat, char)
-    
+
     local moveDir = hum.MoveDirection
     local vertical = 0
-    
+
     if UserInputService:IsKeyDown(Enum.KeyCode.Space) or guiUp then
         vertical = 1
-    elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-        or UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
-        or guiDown then
+    elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or guiDown then
         vertical = -1
     end
-    
-    local pivot = boat:GetPivot()
-    local boatPos = pivot.Position
-    
-    local cameraLookDir = Camera.CFrame.LookVector
-    local cameraRightDir = Camera.CFrame.RightVector
-    
-    local worldMoveDir = Vector3.new(0, 0, 0)
-    
-    -- Z は前後（LookVector方向）
+
+    local cameraLook = Camera.CFrame.LookVector
+    local cameraRight = Camera.CFrame.RightVector
+    local move = Vector3.new(0, 0, 0)
+
     if moveDir.Z ~= 0 then
-        worldMoveDir = worldMoveDir + cameraLookDir * moveDir.Z
+        move = move + cameraLook * moveDir.Z
     end
-    
-    -- X は左右（RightVector方向）
     if moveDir.X ~= 0 then
-        worldMoveDir = worldMoveDir + cameraRightDir * moveDir.X
+        move = move + cameraRight * moveDir.X
     end
-    
-    -- Y は上下
     if vertical ~= 0 then
-        worldMoveDir = worldMoveDir + Vector3.new(0, vertical, 0)
+        move = move + Vector3.new(0, vertical, 0)
     end
-    
-    if worldMoveDir.Magnitude > 0 then
-        worldMoveDir = worldMoveDir.Unit
-        local newPos = boatPos + worldMoveDir * SPEED * dt
-        local newCFrame = CFrame.lookAt(newPos, newPos + cameraLookDir)
-        boat:PivotTo(newCFrame)
+
+    local boatPos = boat:GetPivot().Position
+    if move.Magnitude > 0 then
+        move = move.Unit
+        local targetPos = boatPos + move * SPEED * 25 * dt
+        local targetCFrame = CFrame.lookAt(targetPos, targetPos + cameraLook)
+        boat:PivotTo(targetCFrame)
     else
-        local newCFrame = CFrame.lookAt(boatPos, boatPos + cameraLookDir)
-        boat:PivotTo(newCFrame)
+        local targetCFrame = CFrame.lookAt(boatPos, boatPos + cameraLook)
+        boat:PivotTo(targetCFrame)
     end
 end)
 
+-- ============================================
 -- GUI
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "FlyBoatGui"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+-- ============================================
+local main = Instance.new("ScreenGui")
+main.Name = "main"
+main.Parent = LocalPlayer:WaitForChild("PlayerGui")
+main.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+main.ResetOnSpawn = false
 
-local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 160, 0, 220)
-Main.Position = UDim2.new(0.02, 0, 0.4, 0)
-Main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-Main.BorderSizePixel = 0
-Main.Active = true
-Main.Visible = true
-Main.Parent = ScreenGui
+local Frame = Instance.new("Frame")
+Frame.Parent = main
+Frame.BackgroundColor3 = Color3.fromRGB(163, 255, 137)
+Frame.BorderColor3 = Color3.fromRGB(103, 221, 213)
+Frame.Position = UDim2.new(0.100320168, 0, 0.379746825, 0)
+Frame.Size = UDim2.new(0, 190, 0, 57)
+Frame.Active = true
+Frame.Draggable = true
 
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 8)
-UICorner.Parent = Main
+local up = Instance.new("TextButton")
+up.Name = "up"
+up.Parent = Frame
+up.BackgroundColor3 = Color3.fromRGB(79, 255, 152)
+up.Size = UDim2.new(0, 44, 0, 28)
+up.Font = Enum.Font.SourceSans
+up.Text = "UP"
+up.TextColor3 = Color3.fromRGB(0, 0, 0)
+up.TextSize = 14
 
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 28)
-Title.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-Title.Text = " FlyBoat v4"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 12
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = Main
+local down = Instance.new("TextButton")
+down.Name = "down"
+down.Parent = Frame
+down.BackgroundColor3 = Color3.fromRGB(215, 255, 121)
+down.Position = UDim2.new(0, 0, 0.491228074, 0)
+down.Size = UDim2.new(0, 44, 0, 28)
+down.Font = Enum.Font.SourceSans
+down.Text = "DOWN"
+down.TextColor3 = Color3.fromRGB(0, 0, 0)
+down.TextSize = 14
 
-local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 8)
-TitleCorner.Parent = Title
+local onof = Instance.new("TextButton")
+onof.Name = "onof"
+onof.Parent = Frame
+onof.BackgroundColor3 = Color3.fromRGB(255, 249, 74)
+onof.Position = UDim2.new(0.702823281, 0, 0.491228074, 0)
+onof.Size = UDim2.new(0, 56, 0, 28)
+onof.Font = Enum.Font.SourceSans
+onof.Text = "fly"
+onof.TextColor3 = Color3.fromRGB(0, 0, 0)
+onof.TextSize = 14
 
--- ドラッグ
-do
-    local dragging = false
-    local dragStart, startPos
-    Title.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = Main.Position
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
+local TextLabel = Instance.new("TextLabel")
+TextLabel.Parent = Frame
+TextLabel.BackgroundColor3 = Color3.fromRGB(242, 60, 255)
+TextLabel.Position = UDim2.new(0.469327301, 0, 0, 0)
+TextLabel.Size = UDim2.new(0, 100, 0, 28)
+TextLabel.Font = Enum.Font.SourceSans
+TextLabel.Text = "FLY GUI V3"
+TextLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
+TextLabel.TextScaled = true
+TextLabel.TextSize = 14
+TextLabel.TextWrapped = true
+
+local plus = Instance.new("TextButton")
+plus.Name = "plus"
+plus.Parent = Frame
+plus.BackgroundColor3 = Color3.fromRGB(133, 145, 255)
+plus.Position = UDim2.new(0.231578946, 0, 0, 0)
+plus.Size = UDim2.new(0, 45, 0, 28)
+plus.Font = Enum.Font.SourceSans
+plus.Text = "+"
+plus.TextColor3 = Color3.fromRGB(0, 0, 0)
+plus.TextScaled = true
+plus.TextSize = 14
+plus.TextWrapped = true
+
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Name = "speed"
+speedLabel.Parent = Frame
+speedLabel.BackgroundColor3 = Color3.fromRGB(255, 85, 0)
+speedLabel.Position = UDim2.new(0.468421042, 0, 0.491228074, 0)
+speedLabel.Size = UDim2.new(0, 44, 0, 28)
+speedLabel.Font = Enum.Font.SourceSans
+speedLabel.Text = tostring(SPEED)
+speedLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
+speedLabel.TextScaled = true
+speedLabel.TextSize = 14
+speedLabel.TextWrapped = true
+
+local mine = Instance.new("TextButton")
+mine.Name = "mine"
+mine.Parent = Frame
+mine.BackgroundColor3 = Color3.fromRGB(123, 255, 247)
+mine.Position = UDim2.new(0.231578946, 0, 0.491228074, 0)
+mine.Size = UDim2.new(0, 45, 0, 29)
+mine.Font = Enum.Font.SourceSans
+mine.Text = "-"
+mine.TextColor3 = Color3.fromRGB(0, 0, 0)
+mine.TextScaled = true
+mine.TextSize = 14
+mine.TextWrapped = true
+
+local closebutton = Instance.new("TextButton")
+closebutton.Name = "Close"
+closebutton.Parent = main
+closebutton.BackgroundColor3 = Color3.fromRGB(225, 25, 0)
+closebutton.Font = Enum.Font.SourceSans
+closebutton.Size = UDim2.new(0, 45, 0, 28)
+closebutton.Text = "X"
+closebutton.TextSize = 30
+closebutton.Position = UDim2.new(0, 0, -1, 27)
+
+local mini = Instance.new("TextButton")
+mini.Name = "minimize"
+mini.Parent = main
+mini.BackgroundColor3 = Color3.fromRGB(192, 150, 230)
+mini.Font = Enum.Font.SourceSans
+mini.Size = UDim2.new(0, 45, 0, 28)
+mini.Text = "-"
+mini.TextSize = 40
+mini.Position = UDim2.new(0, 44, -1, 27)
+
+local mini2 = Instance.new("TextButton")
+mini2.Name = "minimize2"
+mini2.Parent = main
+mini2.BackgroundColor3 = Color3.fromRGB(192, 150, 230)
+mini2.Font = Enum.Font.SourceSans
+mini2.Size = UDim2.new(0, 45, 0, 28)
+mini2.Text = "+"
+mini2.TextSize = 40
+mini2.Position = UDim2.new(0, 44, -1, 57)
+mini2.Visible = false
+
+local function setFlyState(state)
+    flyEnabled = state
+    onof.Text = state and "on" or "fly"
+    onof.BackgroundColor3 = state and Color3.fromRGB(0, 255, 120) or Color3.fromRGB(255, 249, 74)
 end
 
-local Toggle = Instance.new("TextButton")
-Toggle.Size = UDim2.new(1, -16, 0, 32)
-Toggle.Position = UDim2.new(0, 8, 0, 36)
-Toggle.BackgroundColor3 = ON and Color3.fromRGB(0, 140, 60) or Color3.fromRGB(140, 40, 40)
-Toggle.Text = ON and "飛行: ON" or "飛行: OFF"
-Toggle.TextColor3 = Color3.new(1, 1, 1)
-Toggle.Font = Enum.Font.GothamBold
-Toggle.TextSize = 14
-Toggle.Parent = Main
-local ToggleCorner = Instance.new("UICorner")
-ToggleCorner.CornerRadius = UDim.new(0, 6)
-ToggleCorner.Parent = Toggle
+local function updateSpeedLabel()
+    speedLabel.Text = tostring(SPEED)
+end
 
-Toggle.MouseButton1Click:Connect(function()
-    ON = not ON
-    Toggle.Text = ON and "飛行: ON" or "飛行: OFF"
-    Toggle.BackgroundColor3 = ON and Color3.fromRGB(0, 140, 60) or Color3.fromRGB(140, 40, 40)
+local function doUp()
+    guiUp = true
+end
+
+local function stopUp()
+    guiUp = false
+end
+
+local function doDown()
+    guiDown = true
+end
+
+local function stopDown()
+    guiDown = false
+end
+
+up.MouseButton1Down:Connect(doUp)
+up.MouseButton1Up:Connect(stopUp)
+up.TouchBegan:Connect(doUp)
+up.TouchEnded:Connect(stopUp)
+
+down.MouseButton1Down:Connect(doDown)
+down.MouseButton1Up:Connect(stopDown)
+down.TouchBegan:Connect(doDown)
+down.TouchEnded:Connect(stopDown)
+
+onof.MouseButton1Click:Connect(function()
+    setFlyState(not flyEnabled)
 end)
 
-local NoclipToggle = Instance.new("TextButton")
-NoclipToggle.Size = UDim2.new(1, -16, 0, 32)
-NoclipToggle.Position = UDim2.new(0, 8, 0, 74)
-NoclipToggle.BackgroundColor3 = NOCLIP_ON and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(100, 40, 40)
-NoclipToggle.Text = NOCLIP_ON and "Noclip: ON" or "Noclip: OFF"
-NoclipToggle.TextColor3 = Color3.new(1, 1, 1)
-NoclipToggle.Font = Enum.Font.GothamBold
-NoclipToggle.TextSize = 14
-NoclipToggle.Parent = Main
-local NoclipCorner = Instance.new("UICorner")
-NoclipCorner.CornerRadius = UDim.new(0, 6)
-NoclipCorner.Parent = NoclipToggle
-
-NoclipToggle.MouseButton1Click:Connect(function()
-    NOCLIP_ON = not NOCLIP_ON
-    NoclipToggle.Text = NOCLIP_ON and "Noclip: ON" or "Noclip: OFF"
-    NoclipToggle.BackgroundColor3 = NOCLIP_ON and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(100, 40, 40)
+plus.MouseButton1Down:Connect(function()
+    SPEED = clampSpeed(SPEED + 1)
+    updateSpeedLabel()
 end)
 
-local UpBtn = Instance.new("TextButton")
-UpBtn.Size = UDim2.new(0.48, 0, 0, 32)
-UpBtn.Position = UDim2.new(0.04, 0, 0.5, 0)
-UpBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
-UpBtn.Text = "▲ 上昇"
-UpBtn.TextColor3 = Color3.new(1, 1, 1)
-UpBtn.Font = Enum.Font.GothamBold
-UpBtn.TextSize = 12
-UpBtn.Parent = Main
-local UpCorner = Instance.new("UICorner")
-UpCorner.CornerRadius = UDim.new(0, 6)
-UpCorner.Parent = UpBtn
+mine.MouseButton1Down:Connect(function()
+    SPEED = clampSpeed(SPEED - 1)
+    updateSpeedLabel()
+end)
 
-UpBtn.MouseButton1Down:Connect(function() guiUp = true end)
-UpBtn.MouseButton1Up:Connect(function() guiUp = false end)
-UpBtn.TouchBegan:Connect(function() guiUp = true end)
-UpBtn.TouchEnded:Connect(function() guiUp = false end)
+closebutton.MouseButton1Click:Connect(function()
+    main:Destroy()
+end)
 
-local DownBtn = Instance.new("TextButton")
-DownBtn.Size = UDim2.new(0.48, 0, 0, 32)
-DownBtn.Position = UDim2.new(0.52, 0, 0.5, 0)
-DownBtn.BackgroundColor3 = Color3.fromRGB(180, 90, 0)
-DownBtn.Text = "▼ 下降"
-DownBtn.TextColor3 = Color3.new(1, 1, 1)
-DownBtn.Font = Enum.Font.GothamBold
-DownBtn.TextSize = 12
-DownBtn.Parent = Main
-local DownCorner = Instance.new("UICorner")
-DownCorner.CornerRadius = UDim.new(0, 6)
-DownCorner.Parent = DownBtn
+mini.MouseButton1Click:Connect(function()
+    up.Visible = false
+down.Visible = false
+    onof.Visible = false
+    plus.Visible = false
+    speedLabel.Visible = false
+    mine.Visible = false
+    mini.Visible = false
+    mini2.Visible = true
+    Frame.BackgroundTransparency = 1
+    closebutton.Position = UDim2.new(0, 0, -1, 57)
+end)
 
-DownBtn.MouseButton1Down:Connect(function() guiDown = true end)
-DownBtn.MouseButton1Up:Connect(function() guiDown = false end)
-DownBtn.TouchBegan:Connect(function() guiDown = true end)
-DownBtn.TouchEnded:Connect(function() guiDown = false end)
+mini2.MouseButton1Click:Connect(function()
+    up.Visible = true
+down.Visible = true
+    onof.Visible = true
+    plus.Visible = true
+    speedLabel.Visible = true
+    mine.Visible = true
+    mini.Visible = true
+    mini2.Visible = false
+    Frame.BackgroundTransparency = 0
+    closebutton.Position = UDim2.new(0, 0, -1, 27)
+end)
 
-print("[FlyBoat v4] Ready!")
+updateSpeedLabel()
+setFlyState(false)
+
+print("[FlyBoat v5] loaded")
