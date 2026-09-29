@@ -1,7 +1,7 @@
 -- ============================================================
 -- フライボート v3（Blox Fruits 用）
--- ・カメラ連動（視点移動で船も向きが変わる）
--- ・スムーズな上下操作（Space/Shift で確実に上昇下降）
+-- ・カメラ連動（視点方向に船が向きて進む）
+-- ・確実な上下操作（Space/Shift で確実に上昇下降）
 -- ・Noclip 統合（船と自分が島をすり抜ける）
 -- ・GUIはドラッグで移動可能、ON/OFF切替可能
 -- ============================================================
@@ -26,6 +26,7 @@ local function getMyBoat()
     if not char then return nil end
     local hum = char:FindFirstChild("Humanoid")
     if not hum then return nil end
+    if not workspace:FindFirstChild("Boats") then return nil end
     for _, boat in pairs(workspace.Boats:GetChildren()) do
         local seat = boat:FindFirstChild("VehicleSeat")
         if seat and seat.Occupant == hum then
@@ -58,11 +59,11 @@ local function applyNoclip(boat, char)
     end
 end
 
--- メインループ（カメラ連動・上下同期）
+-- メインループ（カメラ連動・上下同期・確実な進行方向）
 RunService.Heartbeat:Connect(function(dt)
     if not ON then return end
     
-    local boat, seat = getMyBoat()
+    local boat = getMyBoat()
     if not boat then return end
     
     local char = LocalPlayer.Character
@@ -72,8 +73,8 @@ RunService.Heartbeat:Connect(function(dt)
     -- Noclip 適用
     applyNoclip(boat, char)
     
-    -- WASD / スティック入力（カメラ基準）
-    local dir = hum.MoveDirection
+    -- WASD / スティック入力
+    local moveDir = hum.MoveDirection
     
     -- 上昇 / 下降（Space/Shift または GUI ボタン）
     local vertical = 0
@@ -85,39 +86,50 @@ RunService.Heartbeat:Connect(function(dt)
         vertical = -1
     end
     
-    -- 移動ベクトル
-    local move = dir + Vector3.new(0, vertical, 0)
     local pivot = boat:GetPivot()
+    local boatPos = pivot.Position
     
     -- ==========================================
-    -- カメラの向きに合わせて船を回転
+    -- カメラの方向を取得
     -- ==========================================
-    local cameraDirection = (Camera.Focus.Position - Camera.CFrame.Position).Unit
-    local cameraRightDir = Camera.CFrame.RightVector
+    local cameraPos = Camera.CFrame.Position
+    local cameraLookDir = Camera.CFrame.LookVector  -- カメラが見ている方向
+    local cameraRightDir = Camera.CFrame.RightVector  -- カメラの右方向
+    local cameraUpDir = Camera.CFrame.UpVector  -- カメラの上方向
     
-    -- カメラ基準で前後左右を計算
-    if move.Magnitude > 0 then
-        move = move.Unit
+    -- ==========================================
+    -- 入力を世界座標に変換（カメラ基準）
+    -- ==========================================
+    local worldMoveDir = Vector3.new(0, 0, 0)
+    
+    -- 前後移動（カメラが見ている方向）
+    if moveDir.Z ~= 0 then
+        worldMoveDir = worldMoveDir + cameraLookDir * moveDir.Z
     end
     
-    -- カメラ視点に合わせた移動ベクトル計算
-    local worldMove = Vector3.new(0, 0, 0)
-    if move.Magnitude > 0 then
-        -- カメラ右方向 * 左右入力 + カメラ前方向 * 前後入力
-        worldMove = (cameraRightDir * move.X + cameraDirection * move.Z) * move.Magnitude
-        -- 上下も追加
-        worldMove = worldMove + Vector3.new(0, move.Y, 0)
+    -- 左右移動（カメラの右方向）
+    if moveDir.X ~= 0 then
+        worldMoveDir = worldMoveDir + cameraRightDir * moveDir.X
     end
     
-    -- 新しい座標
-    local newPos = pivot.Position + worldMove * SPEED * dt
+    -- 上下移動（垂直方向）
+    if vertical ~= 0 then
+        worldMoveDir = worldMoveDir + Vector3.new(0, vertical, 0)
+    end
     
-    -- 船をカメラ方向に回転させる（前方向をカメラ方向と一致させる）
-    local lookDir = cameraDirection
-    local upDir = Vector3.new(0, 1, 0)
-    local newCFrame = CFrame.lookAt(newPos, newPos + lookDir, upDir)
-    
-    boat:PivotTo(newCFrame)
+    -- 正規化して速度を適用
+    if worldMoveDir.Magnitude > 0 then
+        worldMoveDir = worldMoveDir.Unit
+        local newPos = boatPos + worldMoveDir * SPEED * dt
+        
+        -- 船をカメラ方向に回転させる
+        local newCFrame = CFrame.lookAt(newPos, newPos + cameraLookDir)
+        boat:PivotTo(newCFrame)
+    else
+        -- 入力なし → その場で浮き続ける
+        local newCFrame = CFrame.lookAt(boatPos, boatPos + cameraLookDir)
+        boat:PivotTo(newCFrame)
+    end
 end)
 
 -- ================= GUI（ドラッグ移動対応） =================
@@ -127,8 +139,8 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = game:GetService("CoreGui")
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 160, 0, 180)
-Main.Position = UDim2.new(0, 20, 0.5, -90)
+Main.Size = UDim2.new(0, 160, 0, 210)  -- 高さを増加
+Main.Position = UDim2.new(0, 20, 0.5, -105)
 Main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 Main.BorderSizePixel = 0
 Main.Active = true
@@ -184,7 +196,7 @@ end
 
 -- ON/OFF ボタン
 local Toggle = Instance.new("TextButton")
-Toggle.Size = UDim2.new(1, -16, 0, 30)
+Toggle.Size = UDim2.new(1, -16, 0, 32)
 Toggle.Position = UDim2.new(0, 8, 0, 36)
 Toggle.BackgroundColor3 = ON and Color3.fromRGB(0, 140, 60) or Color3.fromRGB(140, 40, 40)
 Toggle.Text = ON and "飛行: ON" or "飛行: OFF"
@@ -204,8 +216,8 @@ end)
 
 -- Noclip ボタン
 local NoclipToggle = Instance.new("TextButton")
-NoclipToggle.Size = UDim2.new(1, -16, 0, 30)
-NoclipToggle.Position = UDim2.new(0, 8, 0, 72)
+NoclipToggle.Size = UDim2.new(1, -16, 0, 32)
+NoclipToggle.Position = UDim2.new(0, 8, 0, 74)
 NoclipToggle.BackgroundColor3 = NOCLIP_ON and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(100, 40, 40)
 NoclipToggle.Text = NOCLIP_ON and "Noclip: ON" or "Noclip: OFF"
 NoclipToggle.TextColor3 = Color3.new(1, 1, 1)
@@ -224,8 +236,8 @@ end)
 
 -- ▲ 上昇ボタン（長押し）
 local UpBtn = Instance.new("TextButton")
-UpBtn.Size = UDim2.new(0.5, -12, 0, 30)
-UpBtn.Position = UDim2.new(0, 8, 0, 108)
+UpBtn.Size = UDim2.new(0.5, -12, 0, 32)
+UpBtn.Position = UDim2.new(0, 8, 0, 112)
 UpBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
 UpBtn.Text = "▲ 上昇"
 UpBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -243,8 +255,8 @@ UpBtn.TouchBegan:Connect(function() guiUp = true end)
 
 -- ▼ 下降ボタン（長押し）
 local DownBtn = Instance.new("TextButton")
-DownBtn.Size = UDim2.new(0.5, -12, 0, 30)
-DownBtn.Position = UDim2.new(0.5, 4, 0, 108)
+DownBtn.Size = UDim2.new(0.5, -12, 0, 32)
+DownBtn.Position = UDim2.new(0.5, 4, 0, 112)
 DownBtn.BackgroundColor3 = Color3.fromRGB(180, 90, 0)
 DownBtn.Text = "▼ 下降"
 DownBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -259,3 +271,5 @@ DownBtn.MouseButton1Down:Connect(function() guiDown = true end)
 DownBtn.MouseButton1Up:Connect(function() guiDown = false end)
 DownBtn.TouchEnded:Connect(function() guiDown = false end)
 DownBtn.TouchBegan:Connect(function() guiDown = true end)
+
+print("[FlyBoat v3] スクリプト読み込み完了")
