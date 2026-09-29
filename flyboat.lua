@@ -239,6 +239,7 @@ UpCorner.Parent = UpBtn
 UpBtn.MouseButton1Down:Connect(function() guiUp = true end)
 UpBtn.MouseButton1Up:Connect(function() guiUp = false end)
 UpBtn.TouchEnded:Connect(function() guiUp = false end)
+UpBtn.TouchBegan:Connect(function() guiUp = true end)
 
 -- ▼ 下降ボタン（長押し）
 local DownBtn = Instance.new("TextButton")
@@ -257,13 +258,4 @@ DownCorner.Parent = DownBtn
 DownBtn.MouseButton1Down:Connect(function() guiDown = true end)
 DownBtn.MouseButton1Up:Connect(function() guiDown = false end)
 DownBtn.TouchEnded:Connect(function() guiDown = false end)
-
--- ▲ 上昇ボタン（長押し）タッチ対応
-UpBtn.TouchBegan:Connect(function()
-    guiUp = true
-end)
-
--- ▼ 下降ボタン（長押し）タッチ対応
-DownBtn.TouchBegan:Connect(function()
-    guiDown = true
-end)
+DownBtn.TouchBegan:Connect(function() guiDown = true end)
